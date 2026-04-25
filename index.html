@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>티켓 서버 시간 동기화</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: #0e1116;
+    color: #e6edf3;
+    margin: 0;
+    padding: 2rem 1rem;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  h1 { margin: 0 0 1rem; font-size: 1.4rem; color: #adbac7; font-weight: 500; }
+  .panel {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 1.5rem 2rem;
+    width: 100%;
+    max-width: 720px;
+    margin-bottom: 1rem;
+  }
+  .clock {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: clamp(2.5rem, 8vw, 4.5rem);
+    text-align: center;
+    color: #3fb950;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.1;
+  }
+  .clock.synced { color: #3fb950; }
+  .clock.unsynced { color: #f0883e; }
+  .date {
+    text-align: center;
+    color: #768390;
+    font-size: 0.95rem;
+    margin-top: 0.4rem;
+  }
+  .status {
+    text-align: center;
+    color: #768390;
+    font-size: 0.85rem;
+    margin-top: 0.6rem;
+  }
+  .controls {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 1rem;
+  }
+  label { color: #adbac7; font-size: 0.95rem; }
+  input[type="time"] {
+    background: #0d1117;
+    color: #e6edf3;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 0.5rem 0.7rem;
+    font-size: 1rem;
+    font-family: monospace;
+  }
+  button {
+    background: #238636;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.55rem 1.1rem;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  button:hover { background: #2ea043; }
+  button.secondary { background: #21262d; border: 1px solid #30363d; }
+  button.secondary:hover { background: #30363d; }
+  .countdown {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: clamp(2rem, 6vw, 3.2rem);
+    text-align: center;
+    color: #d29922;
+    font-weight: 600;
+    margin-top: 1rem;
+    min-height: 1em;
+  }
+  .countdown.hot { color: #f85149; animation: pulse 0.4s ease-in-out infinite alternate; }
+  .countdown.fire {
+    color: #fff;
+    background: #da3633;
+    border-radius: 8px;
+    padding: 0.5rem;
+    animation: flash 0.15s ease-in-out infinite alternate;
+  }
+  @keyframes pulse { from { opacity: 0.7; } to { opacity: 1; } }
+  @keyframes flash { from { background: #da3633; } to { background: #ff6a4a; } }
+  .help {
+    color: #768390;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    max-width: 720px;
+  }
+  .help b { color: #adbac7; }
+  .help code {
+    background: #161b22;
+    padding: 0.1em 0.3em;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+</style>
+</head>
+<body>
+  <h1>티켓 예매 서버 시간 동기화</h1>
+
+  <div class="panel">
+    <div class="clock unsynced" id="clock">--:--:--.---</div>
+    <div class="date" id="date">동기화 대기 중</div>
+    <div class="status" id="status">시간 정보 가져오는 중...</div>
+  </div>
+
+  <div class="panel">
+    <div class="controls">
+      <label>목표 시각 (KST):</label>
+      <input type="time" id="target" step="1" value="20:00:00">
+      <button id="setTarget">설정</button>
+      <button id="clearTarget" class="secondary">해제</button>
+      <button id="resync" class="secondary">재동기화</button>
+    </div>
+    <div class="countdown" id="countdown"></div>
+  </div>
+
+  <div class="help">
+    <b>사용법</b><br>
+    1. 페이지를 열면 자동으로 시간 동기화 (3~5초 소요)<br>
+    2. 예매 시작 시각을 입력하고 <b>설정</b> 버튼 클릭<br>
+    3. 카운트다운 숫자가 <code>0.030 ~ 0.050s</code> 남았을 때 클릭하면 네트워크 지연(보통 30~50ms)을 감안해 서버에 정확히 도달<br>
+    4. 30초마다 자동 재동기화. 수동 재동기화는 <b>재동기화</b> 버튼<br>
+    <br>
+    <b>원리</b>: CORS를 허용하는 공개 시간 API(worldtimeapi.org)에서 KST 시간을 받아 본인 PC 시계와의 오프셋을 계산. 모든 주요 서버는 NTP로 동기화돼 있어 티켓링크 서버 시간과 차이는 수 ms 이내.<br>
+    <br>
+    <b>주의</b>: 이 도구는 정확한 시각 표시만 합니다. 자동 클릭/매크로는 공연법 위반이므로 클릭은 직접 하세요.
+  </div>
+
+<script>
+const TIME_SOURCES = [
+  { name: 'worldtimeapi.org', fetch: async () => {
+    const res = await fetch('https://worldtimeapi.org/api/timezone/Asia/Seoul', { cache: 'no-store' });
+    const data = await res.json();
+    return new Date(data.utc_datetime).getTime();
+  }},
+  { name: 'timeapi.io', fetch: async () => {
+    const res = await fetch('https://timeapi.io/api/Time/current/zone?timeZone=UTC', { cache: 'no-store' });
+    const d = await res.json();
+    return Date.UTC(d.year, d.month - 1, d.day, d.hour, d.minute, d.seconds, d.milliSeconds);
+  }},
+];
+
+let offsetMs = 0;
+let synced = false;
+let targetMs = null;
+let alarmFired = false;
+let beepCtx = null;
+
+const $clock = document.getElementById('clock');
+const $date = document.getElementById('date');
+const $status = document.getElementById('status');
+const $countdown = document.getElementById('countdown');
+
+function pad(n, w = 2) { return String(n).padStart(w, '0'); }
+
+function fmtKstParts(epochMs) {
+  const kst = new Date(epochMs + 9 * 3600 * 1000);
+  return {
+    y: kst.getUTCFullYear(),
+    mo: kst.getUTCMonth() + 1,
+    d: kst.getUTCDate(),
+    h: kst.getUTCHours(),
+    mi: kst.getUTCMinutes(),
+    s: kst.getUTCSeconds(),
+    ms: kst.getUTCMilliseconds(),
+  };
+}
+
+function fmtClock(epochMs) {
+  const p = fmtKstParts(epochMs);
+  return `${pad(p.h)}:${pad(p.mi)}:${pad(p.s)}.${pad(p.ms, 3)}`;
+}
+
+function fmtDate(epochMs) {
+  const p = fmtKstParts(epochMs);
+  const days = ['일', '월', '화', '수', '목', '금', '토'];
+  const dow = days[new Date(epochMs + 9 * 3600 * 1000).getUTCDay()];
+  return `${p.y}-${pad(p.mo)}-${pad(p.d)} (${dow}) KST`;
+}
+
+async function trySync(samples = 4) {
+  let bestOff = null;
+  let bestRtt = Infinity;
+  let bestSrc = '';
+  let lastErr = '';
+
+  for (const src of TIME_SOURCES) {
+    for (let i = 0; i < samples; i++) {
+      const t0 = performance.now();
+      try {
+        const serverMs = await src.fetch();
+        const t1 = performance.now();
+        const rtt = t1 - t0;
+        // 서버가 응답을 만든 시점을 요청 중간(t0 + rtt/2)으로 추정
+        const localMidMs = Date.now() - (t1 - (t0 + rtt / 2));
+        const off = serverMs - localMidMs;
+        if (rtt < bestRtt) {
+          bestRtt = rtt;
+          bestOff = off;
+          bestSrc = src.name;
+        }
+      } catch (e) {
+        lastErr = `${src.name}: ${e.message}`;
+      }
+      await new Promise(r => setTimeout(r, 150));
+    }
+    if (bestOff !== null) break; // 한 소스에서 성공했으면 다음 소스는 시도 안 함
+  }
+
+  if (bestOff === null) {
+    synced = false;
+    $clock.classList.remove('synced');
+    $clock.classList.add('unsynced');
+    $status.textContent = `동기화 실패 (${lastErr || '네트워크 오류'}) - 로컬 시계 사용`;
+    return;
+  }
+
+  offsetMs = bestOff;
+  synced = true;
+  $clock.classList.add('synced');
+  $clock.classList.remove('unsynced');
+  $status.textContent = `동기화 완료 [${bestSrc}] · 오프셋 ${bestOff >= 0 ? '+' : ''}${bestOff.toFixed(0)}ms · RTT ${bestRtt.toFixed(0)}ms · 마지막 ${new Date().toLocaleTimeString('ko-KR')}`;
+}
+
+function tick() {
+  const serverNow = Date.now() + offsetMs;
+  $clock.textContent = fmtClock(serverNow);
+  $date.textContent = synced ? fmtDate(serverNow) : '동기화 안 됨 (로컬 시계)';
+
+  if (targetMs !== null) {
+    const remainMs = targetMs - serverNow;
+    const remainS = remainMs / 1000;
+    if (remainMs > 0) {
+      $countdown.textContent = `목표까지 ${remainS.toFixed(3)}s`;
+      $countdown.className = 'countdown' + (remainS < 5 ? ' hot' : '');
+    } else if (remainMs > -2000) {
+      $countdown.textContent = `>>> 지금 클릭! <<<  (${remainS.toFixed(3)}s)`;
+      $countdown.className = 'countdown fire';
+      if (!alarmFired) {
+        alarmFired = true;
+        beep();
+      }
+    } else {
+      $countdown.textContent = `목표 시각 경과 (${(-remainS).toFixed(1)}s 전)`;
+      $countdown.className = 'countdown';
+    }
+  } else {
+    $countdown.textContent = '';
+    $countdown.className = 'countdown';
+  }
+  requestAnimationFrame(tick);
+}
+
+function beep() {
+  try {
+    if (!beepCtx) beepCtx = new (window.AudioContext || window.webkitAudioContext)();
+    for (let i = 0; i < 3; i++) {
+      const osc = beepCtx.createOscillator();
+      const gain = beepCtx.createGain();
+      osc.frequency.value = 880;
+      osc.connect(gain);
+      gain.connect(beepCtx.destination);
+      gain.gain.setValueAtTime(0.3, beepCtx.currentTime + i * 0.25);
+      gain.gain.linearRampToValueAtTime(0, beepCtx.currentTime + i * 0.25 + 0.2);
+      osc.start(beepCtx.currentTime + i * 0.25);
+      osc.stop(beepCtx.currentTime + i * 0.25 + 0.2);
+    }
+  } catch (e) {}
+}
+
+document.getElementById('setTarget').onclick = () => {
+  const v = document.getElementById('target').value;
+  if (!v) return;
+  const parts = v.split(':').map(Number);
+  const h = parts[0] || 0, m = parts[1] || 0, s = parts[2] || 0;
+  const serverNow = Date.now() + offsetMs;
+  const p = fmtKstParts(serverNow);
+  // KST의 (오늘) h:m:s 시각을 UTC ms로 변환
+  let targetUtcMs = Date.UTC(p.y, p.mo - 1, p.d, h, m, s) - 9 * 3600 * 1000;
+  if (targetUtcMs <= serverNow) targetUtcMs += 24 * 3600 * 1000;
+  targetMs = targetUtcMs;
+  alarmFired = false;
+  // 사용자 인터랙션 시점에 AudioContext 초기화 (브라우저 정책)
+  try {
+    if (!beepCtx) beepCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (beepCtx.state === 'suspended') beepCtx.resume();
+  } catch (e) {}
+};
+
+document.getElementById('clearTarget').onclick = () => {
+  targetMs = null;
+  alarmFired = false;
+};
+
+document.getElementById('resync').onclick = () => {
+  $status.textContent = '재동기화 중...';
+  trySync();
+};
+
+// 시작: 즉시 동기화 후 시계 가동, 30초마다 재동기화
+trySync();
+setInterval(trySync, 30000);
+tick();
+</script>
+</body>
+</html>
