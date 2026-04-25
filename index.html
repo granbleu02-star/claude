@@ -377,14 +377,31 @@ function applyTarget() {
     $status.textContent = '시각 입력 형식 오류 (예: 8:00 또는 20:30:00)';
     return;
   }
-  const h12 = clamp(parsed.h, 1, 12);
+  const h = parsed.h;
   const mi = clamp(parsed.m, 0, 59);
   const se = clamp(parsed.se, 0, 59);
-  // 12시간 → 24시간 변환
-  // 오전 12시 = 자정 = 0시,  오후 12시 = 정오 = 12시,  그 외는 ±12
+
+  if (h < 0 || h > 23) {
+    $status.textContent = `시각 범위 오류: ${h}시 (0~23 사이여야 함)`;
+    return;
+  }
+
+  // 12시간/24시간 자동 판별
+  // - 0시: 자정 (오전 12시로 표시)
+  // - 1~12시: 오전/오후 토글에 따라 변환
+  // - 13~23시: 24시간제로 인식, 토글은 자동으로 오후로 맞춤
   let h24;
-  if (isPm) h24 = (h12 === 12) ? 12 : h12 + 12;
-  else      h24 = (h12 === 12) ? 0  : h12;
+  if (h >= 13) {
+    h24 = h;
+    setAmPm(true);
+  } else if (h === 0) {
+    h24 = 0;
+    setAmPm(false);
+  } else {
+    // 1~12: AM/PM 토글 따름
+    if (isPm) h24 = (h === 12) ? 12 : h + 12;
+    else      h24 = (h === 12) ? 0  : h;
+  }
 
   const serverNow = Date.now() + offsetMs;
   const p = fmtKstParts(serverNow);
@@ -393,8 +410,9 @@ function applyTarget() {
   targetMs = targetUtcMs;
   alarmFired = false;
 
-  // 입력 표준화 표시 (HH:MM:SS)
-  $time.value = `${pad(h12)}:${pad(mi)}:${pad(se)}`;
+  // 입력칸을 12시간제로 정규화 표시
+  const h12display = (h24 === 0) ? 12 : (h24 > 12 ? h24 - 12 : h24);
+  $time.value = `${pad(h12display)}:${pad(mi)}:${pad(se)}`;
 
   // 사용자 인터랙션 시점에 AudioContext 초기화 (브라우저 정책)
   try {
