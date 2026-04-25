@@ -75,21 +75,19 @@
     cursor: pointer;
   }
   .ampm button.active { background: #1f6feb; color: white; }
-  input[type="number"] {
+  input[type="text"] {
     background: #0d1117;
     color: #e6edf3;
     border: 1px solid #30363d;
     border-radius: 6px;
-    padding: 0.5rem 0.4rem;
-    font-size: 1.1rem;
+    padding: 0.5rem 0.7rem;
+    font-size: 1.2rem;
     font-family: monospace;
-    width: 3.2rem;
+    width: 7rem;
     text-align: center;
-    -moz-appearance: textfield;
+    letter-spacing: 0.05em;
   }
-  input[type="number"]::-webkit-outer-spin-button,
-  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-  .colon { color: #768390; font-weight: bold; font-size: 1.2rem; }
+  input[type="text"]:focus { outline: none; border-color: #1f6feb; }
   button {
     background: #238636;
     color: white;
@@ -152,11 +150,7 @@
         <button type="button" id="amBtn">오전</button>
         <button type="button" id="pmBtn" class="active">오후</button>
       </div>
-      <input type="number" id="hh" min="1" max="12" value="8" inputmode="numeric">
-      <span class="colon">:</span>
-      <input type="number" id="mm" min="0" max="59" value="0" inputmode="numeric">
-      <span class="colon">:</span>
-      <input type="number" id="ss" min="0" max="59" value="0" inputmode="numeric">
+      <input type="text" id="time" value="8:00" placeholder="8:00 또는 8:00:00" inputmode="numeric" autocomplete="off">
       <button id="setTarget">설정</button>
       <button id="clearTarget" class="secondary">해제</button>
       <button id="resync" class="secondary">재동기화</button>
@@ -167,7 +161,7 @@
   <div class="help">
     <b>사용법</b><br>
     1. 페이지를 열면 자동으로 시간 동기화 (3~5초 소요)<br>
-    2. <b>오전/오후</b> 선택 → 시:분:초 입력 → <b>설정</b> 버튼<br>
+    2. <b>오전/오후</b> 선택 → 시각 입력 → <b>설정</b> 버튼 (또는 Enter). 입력 형식 자유: <code>8</code>, <code>8:00</code>, <code>20:30:00</code>, <code>830</code> 모두 인식<br>
     3. 카운트다운 숫자가 <code>0.030 ~ 0.050s</code> 남았을 때 클릭하면 네트워크 지연(보통 30~50ms)을 감안해 서버에 정확히 도달<br>
     4. 30초마다 자동 재동기화. 수동 재동기화는 <b>재동기화</b> 버튼<br>
     <br>
@@ -322,9 +316,7 @@ let isPm = true; // 기본 오후
 
 const $am = document.getElementById('amBtn');
 const $pm = document.getElementById('pmBtn');
-const $hh = document.getElementById('hh');
-const $mm = document.getElementById('mm');
-const $ss = document.getElementById('ss');
+const $time = document.getElementById('time');
 
 function setAmPm(pm) {
   isPm = pm;
@@ -340,10 +332,38 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, Math.trunc(n)));
 }
 
+// "8", "8:00", "08:00:00", "830", "83045" 모두 받음
+function parseTimeInput(s) {
+  s = (s || '').trim();
+  if (!s) return null;
+  let h = 0, m = 0, se = 0;
+  if (s.includes(':')) {
+    const parts = s.split(':');
+    h = Number(parts[0] || 0);
+    m = Number(parts[1] || 0);
+    se = Number(parts[2] || 0);
+  } else if (/^\d+$/.test(s)) {
+    // 숫자만: 1~2자리=시, 3~4자리=시분, 5~6자리=시분초
+    const len = s.length;
+    if (len <= 2) { h = Number(s); }
+    else if (len <= 4) { h = Number(s.slice(0, len - 2)); m = Number(s.slice(-2)); }
+    else { h = Number(s.slice(0, len - 4)); m = Number(s.slice(-4, -2)); se = Number(s.slice(-2)); }
+  } else {
+    return null;
+  }
+  if (![h, m, se].every(Number.isFinite)) return null;
+  return { h, m, se };
+}
+
 function applyTarget() {
-  const h12 = clamp($hh.value, 1, 12);
-  const mi = clamp($mm.value, 0, 59);
-  const se = clamp($ss.value, 0, 59);
+  const parsed = parseTimeInput($time.value);
+  if (!parsed) {
+    $status.textContent = '시각 입력 형식 오류 (예: 8:00 또는 20:30:00)';
+    return;
+  }
+  const h12 = clamp(parsed.h, 1, 12);
+  const mi = clamp(parsed.m, 0, 59);
+  const se = clamp(parsed.se, 0, 59);
   // 12시간 → 24시간 변환
   // 오전 12시 = 자정 = 0시,  오후 12시 = 정오 = 12시,  그 외는 ±12
   let h24;
@@ -357,6 +377,9 @@ function applyTarget() {
   targetMs = targetUtcMs;
   alarmFired = false;
 
+  // 입력 표준화 표시 (HH:MM:SS)
+  $time.value = `${pad(h12)}:${pad(mi)}:${pad(se)}`;
+
   // 사용자 인터랙션 시점에 AudioContext 초기화 (브라우저 정책)
   try {
     if (!beepCtx) beepCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -365,6 +388,8 @@ function applyTarget() {
 }
 
 document.getElementById('setTarget').onclick = applyTarget;
+// Enter 키로도 설정
+$time.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyTarget(); });
 
 document.getElementById('clearTarget').onclick = () => {
   targetMs = null;
