@@ -155,14 +155,24 @@
       <button id="clearTarget" class="secondary">해제</button>
       <button id="resync" class="secondary">재동기화</button>
     </div>
+    <div class="controls" style="margin-top: 0.6rem;">
+      <label>새로고침 지연 보정:</label>
+      <input type="number" id="lag" min="0" max="2000" step="10" value="200" inputmode="numeric" style="width: 5rem;">
+      <span style="color: #768390;">ms 미리</span>
+      <span style="color: #586069; font-size: 0.85rem; margin-left: 0.4rem;">(앱 새로고침: 200~400, PC 클릭: 50~100)</span>
+    </div>
     <div class="countdown" id="countdown"></div>
+    <div class="status" id="targetInfo" style="text-align: center; margin-top: 0.4rem;"></div>
   </div>
 
   <div class="help">
     <b>사용법</b><br>
     1. 페이지를 열면 자동으로 시간 동기화 (3~5초 소요)<br>
-    2. <b>오전/오후</b> 선택 → 시각 입력 → <b>설정</b> 버튼 (또는 Enter). 입력 형식 자유: <code>8</code>, <code>8:00</code>, <code>20:30:00</code>, <code>830</code> 모두 인식<br>
-    3. 카운트다운 숫자가 <code>0.030 ~ 0.050s</code> 남았을 때 클릭하면 네트워크 지연(보통 30~50ms)을 감안해 서버에 정확히 도달<br>
+    2. <b>오전/오후</b> 선택 → 시각 입력 → <b>설정</b> (또는 Enter). 입력 형식 자유: <code>8</code>, <code>8:00</code>, <code>20:30:00</code>, <code>830</code> 모두 인식<br>
+    3. <b>지연 보정</b>: 새로고침 누르고 → 요청이 서버 도달까지 걸리는 시간. 카운트다운이 0이 되는 순간(=예매시작 시각보다 보정값만큼 빠른 시점) 새로고침을 누르면 서버에 정확히 예매시작 시각에 요청이 도달<br>
+    &nbsp;&nbsp;• 모바일 LTE/5G + 앱 새로고침: <b>200~400ms</b> 권장 (앱 렌더링 + 네트워크)<br>
+    &nbsp;&nbsp;• PC 유선 + 브라우저 새로고침: <b>50~100ms</b><br>
+    &nbsp;&nbsp;• 너무 일찍 새로고침하면 "예매 시작 전" 페이지를 다시 받아서 또 새로고침해야 함. 처음에는 <b>100ms 안전</b>하게 잡고 점차 줄이는 방식 추천<br>
     4. 30초마다 자동 재동기화. 수동 재동기화는 <b>재동기화</b> 버튼<br>
     <br>
     <b>원리</b>: CORS를 허용하는 공개 시간 API(worldtimeapi.org)에서 KST 시간을 받아 본인 PC 시계와의 오프셋을 계산. 모든 주요 서버는 NTP로 동기화돼 있어 티켓링크 서버 시간과 차이는 수 ms 이내.<br>
@@ -272,25 +282,29 @@ function tick() {
   $date.textContent = synced ? fmtDate(serverNow) : '동기화 안 됨 (로컬 시계)';
 
   if (targetMs !== null) {
-    const remainMs = targetMs - serverNow;
+    const lagMs = clamp($lag.value, 0, 2000);
+    const refreshMs = targetMs - lagMs; // 실제 새로고침을 눌러야 할 서버시간
+    const remainMs = refreshMs - serverNow;
     const remainS = remainMs / 1000;
     if (remainMs > 0) {
-      $countdown.textContent = `목표까지 ${remainS.toFixed(3)}s`;
+      $countdown.textContent = `새로고침까지 ${remainS.toFixed(3)}s`;
       $countdown.className = 'countdown' + (remainS < 5 ? ' hot' : '');
     } else if (remainMs > -2000) {
-      $countdown.textContent = `>>> 지금 클릭! <<<  (${remainS.toFixed(3)}s)`;
+      $countdown.textContent = `>>> 지금 새로고침! <<<  (${remainS.toFixed(3)}s)`;
       $countdown.className = 'countdown fire';
       if (!alarmFired) {
         alarmFired = true;
         beep();
       }
     } else {
-      $countdown.textContent = `목표 시각 경과 (${(-remainS).toFixed(1)}s 전)`;
+      $countdown.textContent = `시점 경과 (${(-remainS).toFixed(1)}s 전)`;
       $countdown.className = 'countdown';
     }
+    $targetInfo.textContent = `예매 시작 ${fmtClock(targetMs)} · 새로고침 시점 ${fmtClock(refreshMs)} (${lagMs}ms 미리)`;
   } else {
     $countdown.textContent = '';
     $countdown.className = 'countdown';
+    $targetInfo.textContent = '';
   }
   requestAnimationFrame(tick);
 }
@@ -317,6 +331,8 @@ let isPm = true; // 기본 오후
 const $am = document.getElementById('amBtn');
 const $pm = document.getElementById('pmBtn');
 const $time = document.getElementById('time');
+const $lag = document.getElementById('lag');
+const $targetInfo = document.getElementById('targetInfo');
 
 function setAmPm(pm) {
   isPm = pm;
@@ -390,6 +406,8 @@ function applyTarget() {
 document.getElementById('setTarget').onclick = applyTarget;
 // Enter 키로도 설정
 $time.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyTarget(); });
+// 지연 보정 값을 바꾸면 알람 다시 발생할 수 있게 리셋
+$lag.addEventListener('change', () => { alarmFired = false; });
 
 document.getElementById('clearTarget').onclick = () => {
   targetMs = null;
