@@ -140,7 +140,7 @@
   <h1>티켓 예매 서버 시간 동기화</h1>
 
   <div class="panel">
-    <div class="clock unsynced" id="clock">--:--:--.---</div>
+    <div class="clock unsynced" id="clock">--:--:--.-</div>
     <div class="date" id="date">동기화 대기 중</div>
     <div class="status" id="status">시간 정보 가져오는 중...</div>
   </div>
@@ -218,7 +218,7 @@ function fmtKstParts(epochMs) {
 
 function fmtClock(epochMs) {
   const p = fmtKstParts(epochMs);
-  return `${pad(p.h)}:${pad(p.mi)}:${pad(p.s)}.${pad(p.ms, 3)}`;
+  return `${pad(p.h)}:${pad(p.mi)}:${pad(p.s)}.${Math.floor(p.ms / 100)}`;
 }
 
 function fmtDate(epochMs) {
