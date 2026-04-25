@@ -90,21 +90,6 @@
   input[type="number"]::-webkit-outer-spin-button,
   input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .colon { color: #768390; font-weight: bold; font-size: 1.2rem; }
-  .quick {
-    display: flex;
-    gap: 0.4rem;
-    flex-wrap: wrap;
-    justify-content: center;
-    margin-top: 0.8rem;
-  }
-  .quick button {
-    background: #21262d;
-    border: 1px solid #30363d;
-    color: #adbac7;
-    font-size: 0.85rem;
-    padding: 0.35rem 0.7rem;
-  }
-  .quick button:hover { background: #30363d; }
   button {
     background: #238636;
     color: white;
@@ -176,24 +161,13 @@
       <button id="clearTarget" class="secondary">해제</button>
       <button id="resync" class="secondary">재동기화</button>
     </div>
-    <div class="quick">
-      <button data-h="9" data-ap="am">오전 9시</button>
-      <button data-h="10" data-ap="am">오전 10시</button>
-      <button data-h="11" data-ap="am">오전 11시</button>
-      <button data-h="12" data-ap="pm">정오 12시</button>
-      <button data-h="2" data-ap="pm">오후 2시</button>
-      <button data-h="6" data-ap="pm">오후 6시</button>
-      <button data-h="7" data-ap="pm">오후 7시</button>
-      <button data-h="8" data-ap="pm">오후 8시</button>
-      <button data-h="9" data-ap="pm">오후 9시</button>
-    </div>
     <div class="countdown" id="countdown"></div>
   </div>
 
   <div class="help">
     <b>사용법</b><br>
     1. 페이지를 열면 자동으로 시간 동기화 (3~5초 소요)<br>
-    2. <b>오전/오후</b> 선택 → 시:분:초 입력 → <b>설정</b> 버튼 (또는 빠른선택 버튼 한 번 클릭)<br>
+    2. <b>오전/오후</b> 선택 → 시:분:초 입력 → <b>설정</b> 버튼<br>
     3. 카운트다운 숫자가 <code>0.030 ~ 0.050s</code> 남았을 때 클릭하면 네트워크 지연(보통 30~50ms)을 감안해 서버에 정확히 도달<br>
     4. 30초마다 자동 재동기화. 수동 재동기화는 <b>재동기화</b> 버튼<br>
     <br>
@@ -391,19 +365,6 @@ function applyTarget() {
 }
 
 document.getElementById('setTarget').onclick = applyTarget;
-
-// 빠른선택 버튼: 12시간제 시각 + 오전/오후 즉시 설정 후 카운트다운 시작
-document.querySelectorAll('.quick button').forEach(btn => {
-  btn.onclick = () => {
-    const h = btn.dataset.h;
-    const ap = btn.dataset.ap;
-    $hh.value = h;
-    $mm.value = 0;
-    $ss.value = 0;
-    setAmPm(ap === 'pm');
-    applyTarget();
-  };
-});
 
 document.getElementById('clearTarget').onclick = () => {
   targetMs = null;
